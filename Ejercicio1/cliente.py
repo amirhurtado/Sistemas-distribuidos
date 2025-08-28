@@ -215,7 +215,8 @@ def escuchar_servidor():
                 # Abrimos la ventana con el remitente
                 pv = get_private_window(remitente)
                 # Mostramos el mensaje con el nombre del remitente
-                pv['write'](f"[{remitente}]: {msg}")
+                timestamp = datetime.now().strftime("%H:%M")
+                pv['write'](f"[{remitente}] ({timestamp}): {msg}")
 
             elif tipo == 'E': # ECO de nuestro propio mensaje
                 destinatario = cliente.recv(64).decode('utf-8').strip()
@@ -225,7 +226,8 @@ def escuchar_servidor():
                 # Abrimos la ventana con el destinatario (con quien hablamos)
                 pv = get_private_window(destinatario)
                 # Mostramos el mensaje con NUESTRO propio nombre (apodo)
-                pv['write'](f"[{apodo}]: {msg}")
+                timestamp = datetime.now().strftime("%H:%M")
+                pv['write'](f"[{apodo}] ({timestamp}): {msg}")
             
             elif tipo == 'F':
                 nombre_archivo = cliente.recv(256).decode('utf-8').strip()
