@@ -112,7 +112,7 @@ def manejar_cliente(conn, addr, gui_log):
                 # payload al receptor: contraparte = remitente
                 payload_receptor = b'P' + remitente.ljust(64).encode('utf-8') + ln.to_bytes(4, 'big') + msg.encode('utf-8')
                 # eco al emisor: contraparte = destinatario
-                payload_emisor = b'P' + destinatario.ljust(64).encode('utf-8') + ln.to_bytes(4, 'big') + msg.encode('utf-8')
+                payload_emisor = b'E' + destinatario.ljust(64).encode('utf-8') + ln.to_bytes(4, 'big') + msg.encode('utf-8')
 
                 # enviar al receptor si existe y está conectado
                 if dest_conn:
