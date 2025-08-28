@@ -126,10 +126,14 @@ def escribir_en_chat(mensaje_completo, tipo_mensaje="info"):
     timestamp = datetime.now().strftime("%H:%M")
     
     if tipo_mensaje == "yo":
+        # Línea de nombre y hora (ahora visible y alineada a la derecha)
         chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_mio_linea")
+        # Burbuja del mensaje
         chat_area.insert(tk.END, f"{mensaje}\n\n", "mi_burbuja")
     elif tipo_mensaje == "otro":
+        # Línea de nombre y hora
         chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_otro_linea")
+        # Burbuja del mensaje
         chat_area.insert(tk.END, f"{mensaje}\n\n", "otro_usuario_burbuja")
     else: 
         chat_area.insert(tk.END, f"{mensaje_completo}\n", "info")
@@ -255,9 +259,15 @@ def enviar_mensaje(event=None):
 def iniciar_privado(event=None):
     seleccion = usuarios_listbox.curselection()
     if not seleccion:
-        messagebox.showinfo("Chat Privado", "Por favor, selecciona un usuario de la lista de la izquierda para chatear.", parent=root)
+        messagebox.showinfo("Chat Privado", "Por favor, selecciona un usuario de la lista para chatear.", parent=root)
         return
+    
     destinatario = usuarios_listbox.get(seleccion[0])
+    
+    if destinatario == apodo:
+        messagebox.showwarning("Acción no permitida", "No puedes iniciar un chat privado contigo mismo.", parent=root)
+        return # Detiene la ejecución de la función aquí
+    
     get_private_window(destinatario)
 
 def enviar_archivo():
@@ -289,8 +299,8 @@ chat_area.tag_configure("info", foreground=COLOR_TEXTO_SECUNDARIO, justify='cent
 chat_area.tag_configure("nombre_otro_linea", font=FONT_BOLD, foreground=COLOR_PRIMARIO, justify='left')
 chat_area.tag_configure("nombre_mio_linea", font=FONT_BOLD, foreground=COLOR_TEXTO_SECUNDARIO, justify='right')
 
-chat_area.tag_configure("otro_usuario_burbuja", background=COLOR_BARRA_LATERAL, foreground=COLOR_TEXTO, justify='left', lmargin1=15, lmargin2=15, rmargin=120, spacing3=15, relief="groove", borderwidth=2, wrap="word")
-chat_area.tag_configure("mi_burbuja", background=COLOR_MI_BURBUJA, foreground=COLOR_TEXTO_MI_MENSAJE, justify='right', lmargin1=120, lmargin2=120, rmargin=15, spacing3=15, relief="groove", borderwidth=2, wrap="word")
+chat_area.tag_configure("otro_usuario_burbuja", background=COLOR_BARRA_LATERAL, foreground=COLOR_TEXTO, justify='left', lmargin1=15, lmargin2=15, rmargin=120, spacing3=5, relief="groove", borderwidth=2, wrap="word")
+chat_area.tag_configure("mi_burbuja", background=COLOR_MI_BURBUJA, foreground=COLOR_TEXTO_MI_MENSAJE, justify='right', lmargin1=120, lmargin2=120, rmargin=15, spacing3=5, relief="groove", borderwidth=2, wrap="word")
 
 
 def crear_boton_con_icono(parent, texto_icono, comando):
