@@ -149,7 +149,7 @@ def manejar_cliente(conn, addr, gui_log):
             enviar_lista_clientes(gui_log)
 
 def iniciar_servidor(gui_log):
-    HOST = "10.253.23.135"
+    HOST = "192.168.1.105"
     PORT = 5000
     MAX_CLIENTES = 10
 

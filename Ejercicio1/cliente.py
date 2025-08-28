@@ -2,14 +2,24 @@ import socket
 import threading
 import os
 import tkinter as tk
-from tkinter import filedialog, simpledialog, scrolledtext, messagebox
+from tkinter import filedialog, simpledialog, scrolledtext, messagebox, Listbox
 
-HOST = "10.253.23.135"
+HOST = "192.168.1.105" # Asegúrate que esta sea la IP del servidor
 PORT = 5000
 
-cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-cliente.connect((HOST, PORT))
+# ---- Variables Globales ----
+apodo = ""
+lista_usuarios_conectados = []
 
+# ---- Configuración del Socket ----
+try:
+    cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    cliente.connect((HOST, PORT))
+except ConnectionRefusedError:
+    messagebox.showerror("Error de Conexión", f"No se pudo conectar al servidor en {HOST}:{PORT}. ¿Está el servidor en línea?")
+    raise SystemExit
+
+# ---- Configuración de la GUI Principal ----
 root = tk.Tk()
 root.title("Cliente Chat")
 
@@ -25,18 +35,18 @@ def escribir_en_chat(texto):
     chat_area.yview(tk.END)
     chat_area.config(state="disabled")
 
-# ---- Ventanas privadas ----
-private_windows = {}  # {apodo_contraparte: {'win': Toplevel, 'text': ScrolledText, 'entry': Entry}}
+# ---- Ventanas de Chat Privado ----
+private_windows = {}  # {apodo_contraparte: {'win': Toplevel, ...}}
 
 def get_private_window(contraparte):
-    if contraparte in private_windows:
+    if contraparte in private_windows and private_windows[contraparte]['win'].winfo_exists():
+        private_windows[contraparte]['win'].lift()
         return private_windows[contraparte]
 
     win = tk.Toplevel(root)
     win.title(f"Chat privado con {contraparte}")
     txt = scrolledtext.ScrolledText(win, wrap=tk.WORD, state="disabled", width=50, height=18)
     txt.pack(padx=8, pady=8)
-
     entry = tk.Entry(win, width=40)
     entry.pack(side=tk.LEFT, padx=8, pady=8, expand=True, fill=tk.X)
 
@@ -45,16 +55,19 @@ def get_private_window(contraparte):
         if not msg:
             return
         try:
-            # Protocolo 'P' = destinatario(64) + len + msg
             destinatario = contraparte
             cliente.sendall(b'P' + destinatario.ljust(64).encode('utf-8') + len(msg.encode('utf-8')).to_bytes(4, 'big') + msg.encode('utf-8'))
             entry.delete(0, tk.END)
-            # Importante: NO escribimos aquí; esperamos el eco del servidor para evitar duplicados
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo enviar privado: {e}")
 
     btn = tk.Button(win, text="Enviar", command=enviar_privado_cmd)
     btn.pack(side=tk.LEFT, padx=6, pady=8)
+
+    def on_private_close():
+        del private_windows[contraparte]
+        win.destroy()
+    win.protocol("WM_DELETE_WINDOW", on_private_close)
 
     def write_private_line(s):
         txt.config(state="normal")
@@ -65,18 +78,18 @@ def get_private_window(contraparte):
     private_windows[contraparte] = {'win': win, 'text': txt, 'entry': entry, 'write': write_private_line}
     return private_windows[contraparte]
 
-# ---- Apodo ----
+# ---- Lógica de Conexión y Recepción ----
 apodo = simpledialog.askstring("Apodo", "Escribe tu apodo:", parent=root)
 if not apodo:
     messagebox.showerror("Error", "Debes ingresar un apodo.")
     root.destroy()
     cliente.close()
     raise SystemExit
+root.title(f"Cliente Chat - {apodo}")
+cliente.sendall(b'A' + apodo.encode('utf--8'))
 
-cliente.sendall(b'A' + apodo.encode('utf-8'))
-
-# ---- Recepción ----
 def escuchar_servidor():
+    global lista_usuarios_conectados
     while True:
         try:
             tipo_b = cliente.recv(1)
@@ -86,8 +99,7 @@ def escuchar_servidor():
 
             if tipo == 'M':
                 data = cliente.recv(1024).decode('utf-8')
-                if not data:
-                    break
+                if not data: break
                 escribir_en_chat(data)
 
             elif tipo == 'F':
@@ -101,72 +113,96 @@ def escuchar_servidor():
                     leidos = 0
                     while leidos < tamaño:
                         chunk = cliente.recv(min(4096, tamaño - leidos))
-                        if not chunk:
-                            break
+                        if not chunk: break
                         f.write(chunk)
                         leidos += len(chunk)
                 escribir_en_chat(f"[ARCHIVO] Descarga completada: {nombre_archivo}")
 
             elif tipo == 'P':
-                # formato recibido: contraparte(64) + len + msg
                 contraparte = cliente.recv(64).decode('utf-8').strip()
                 ln = int.from_bytes(cliente.recv(4), 'big')
                 msg = cliente.recv(ln).decode('utf-8') if ln > 0 else ""
-                # Abrir/obtener ventana privada y mostrar
                 pv = get_private_window(contraparte)
                 pv['write'](f"[{contraparte}] {msg}")
 
+            elif tipo == 'L':
+                data = cliente.recv(4096).decode('utf-8')
+                lista_usuarios_conectados = data.split(',')
+                escribir_en_chat(f"[SISTEMA] Usuarios conectados: {', '.join(lista_usuarios_conectados)}")
+
         except Exception as e:
-            escribir_en_chat(f"[ERROR] {e}")
+            escribir_en_chat(f"[ERROR DE CONEXIÓN] {e}")
             break
+    cliente.close()
 
 threading.Thread(target=escuchar_servidor, daemon=True).start()
 
-# ---- Envío público ----
+# ---- Lógica de Envío ----
 def enviar_mensaje():
     msg = entry_msg.get().strip()
     if msg:
         try:
             cliente.sendall(b'M' + msg.encode('utf-8'))
             entry_msg.delete(0, tk.END)
-            # Si prefieres verlo de inmediato localmente: escribir_en_chat(f"[Tú] {msg}")
         except:
             escribir_en_chat("[ERROR] No se pudo enviar el mensaje")
 
+def iniciar_privado():
+    lista_filtrada = [u for u in lista_usuarios_conectados if u != apodo and u]
+    if not lista_filtrada:
+        messagebox.showinfo("Chat Privado", "No hay otros usuarios conectados para iniciar un chat.")
+        return
+
+    win_seleccion = tk.Toplevel(root)
+    win_seleccion.title("Iniciar Chat Privado")
+    win_seleccion.geometry("250x300")
+    win_seleccion.resizable(False, False)
+
+    tk.Label(win_seleccion, text="Selecciona un usuario:").pack(pady=10)
+
+    listbox = Listbox(win_seleccion, selectmode=tk.SINGLE)
+    listbox.pack(expand=True, fill=tk.BOTH, padx=10)
+    for usuario in lista_filtrada:
+        listbox.insert(tk.END, usuario)
+
+    def on_select():
+        seleccion = listbox.curselection()
+        if not seleccion:
+            messagebox.showwarning("Selección", "Por favor, selecciona un usuario.", parent=win_seleccion)
+            return
+        
+        destinatario = listbox.get(seleccion[0])
+        win_seleccion.destroy()
+        get_private_window(destinatario)
+
+    btn_seleccionar = tk.Button(win_seleccion, text="Chatear", command=on_select)
+    btn_seleccionar.pack(pady=10)
+    win_seleccion.transient(root)
+    win_seleccion.grab_set()
+    root.wait_window(win_seleccion)
+
+def enviar_archivo():
+    ruta = filedialog.askopenfilename()
+    if not ruta: return
+    try:
+        nombre = os.path.basename(ruta)
+        tam = os.path.getsize(ruta)
+        cliente.sendall(b'F' + nombre.ljust(256).encode('utf-8') + tam.to_bytes(8, 'big'))
+        with open(ruta, 'rb') as f:
+            cliente.sendfile(f)
+        escribir_en_chat(f"[ARCHIVO] Enviado: {nombre}")
+    except Exception as e:
+        escribir_en_chat(f"[ERROR] No se pudo enviar el archivo: {e}")
+
+# ---- Configuración de Botones y Cierre ----
 btn_enviar = tk.Button(root, text="Enviar", command=enviar_mensaje)
 btn_enviar.pack(side=tk.LEFT, padx=5, pady=5)
-
-# Botón para iniciar un chat privado (elige apodo destino)
-def iniciar_privado():
-    dest = simpledialog.askstring("Privado", "Apodo del destinatario:", parent=root)
-    if dest:
-        get_private_window(dest)  # solo abre la ventana; el envío se hace desde esa ventana
+entry_msg.bind("<Return>", lambda event: enviar_mensaje())
 
 btn_priv = tk.Button(root, text="Privado...", command=iniciar_privado)
 btn_priv.pack(side=tk.LEFT, padx=5, pady=5)
 
-# Enviar archivo público (no privados en esta versión)
-def enviar_archivo():
-    ruta = filedialog.askopenfilename()
-    if not ruta:
-        return
-    try:
-        nombre = os.path.basename(ruta)
-        tam = os.path.getsize(ruta)
-        cliente.sendall(b'F')
-        cliente.sendall(nombre.ljust(256).encode('utf-8'))
-        cliente.sendall(tam.to_bytes(8, 'big'))
-        with open(ruta, 'rb') as f:
-            while True:
-                chunk = f.read(4096)
-                if not chunk:
-                    break
-                cliente.sendall(chunk)
-        escribir_en_chat(f"[ARCHIVO] Enviado: {nombre}")
-    except Exception as e:
-        escribir_en_chat(f"[ERROR] {e}")
-
-btn_archivo = tk.Button(root, text="Enviar archivo", command=enviar_archivo)
+btn_archivo = tk.Button(root, text="Adjuntar", command=enviar_archivo)
 btn_archivo.pack(side=tk.LEFT, padx=5, pady=5)
 
 def on_closing():
