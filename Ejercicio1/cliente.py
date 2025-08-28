@@ -24,6 +24,8 @@ FONT_NORMAL = ("Segoe UI", 10)
 FONT_BOLD = ("Segoe UI", 10, "bold")
 FONT_ITALIC_PEQUEÑA = ("Segoe UI", 8, "italic")
 FONT_TITULO = ("Segoe UI", 12, "bold")
+# --- NUEVA FUENTE AÑADIDA ---
+FONT_TU = ("Segoe UI", 8, "normal")
 
 # ---- Variables Globales ----
 apodo = ""
@@ -126,14 +128,16 @@ def escribir_en_chat(mensaje_completo, tipo_mensaje="info"):
     timestamp = datetime.now().strftime("%H:%M")
     
     if tipo_mensaje == "yo":
-        # Línea de nombre y hora (ahora visible y alineada a la derecha)
-        chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_mio_linea")
-        # Burbuja del mensaje
+        # --- MODIFICACIÓN AQUÍ para añadir "(tú)" con su propio estilo ---
+        # Se inserta en tres partes para poder aplicar diferentes estilos a cada una
+        chat_area.insert(tk.END, f"{remitente} ", "nombre_mio_linea")
+        chat_area.insert(tk.END, "(tú) ", "tag_tu")
+        chat_area.insert(tk.END, f"({timestamp})\n", "nombre_mio_linea")
+        
         chat_area.insert(tk.END, f"{mensaje}\n\n", "mi_burbuja")
+        
     elif tipo_mensaje == "otro":
-        # Línea de nombre y hora
         chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_otro_linea")
-        # Burbuja del mensaje
         chat_area.insert(tk.END, f"{mensaje}\n\n", "otro_usuario_burbuja")
     else: 
         chat_area.insert(tk.END, f"{mensaje_completo}\n", "info")
@@ -142,10 +146,14 @@ def escribir_en_chat(mensaje_completo, tipo_mensaje="info"):
     chat_area.yview(tk.END)
 
 def actualizar_lista_usuarios(lista_nombres):
+    # --- MODIFICACIÓN AQUÍ para añadir "(tú)" en la lista de usuarios ---
     usuarios_listbox.delete(0, tk.END)
     for nombre in sorted(lista_nombres):
         if nombre:
-            usuarios_listbox.insert(tk.END, nombre)
+            display_name = nombre
+            if nombre == apodo:
+                display_name += " (tú)"
+            usuarios_listbox.insert(tk.END, display_name)
 
 def get_private_window(contraparte):
     if contraparte in private_windows and private_windows[contraparte]['win'].winfo_exists():
@@ -163,7 +171,6 @@ def get_private_window(contraparte):
         msg = entry.get().strip()
         if not msg: return
         try:
-            # La lógica de envío no cambia
             cliente.sendall(b'P' + contraparte.ljust(64).encode('utf-8') + len(msg.encode('utf-8')).to_bytes(4, 'big') + msg.encode('utf-8'))
             entry.delete(0, tk.END)
         except Exception as e:
@@ -206,28 +213,22 @@ def escuchar_servidor():
                 data = cliente.recv(4096).decode('utf-8')
                 actualizar_lista_usuarios(data.split(','))
 
-            # --- LÓGICA CORREGIDA PARA CHAT PRIVADO ---
-            elif tipo == 'P': # Mensaje de OTRA PERSONA
+            elif tipo == 'P':
                 remitente = cliente.recv(64).decode('utf-8').strip()
                 ln = int.from_bytes(cliente.recv(4), 'big')
                 msg = cliente.recv(ln).decode('utf-8') if ln > 0 else ""
-                
-                # Abrimos la ventana con el remitente
                 pv = get_private_window(remitente)
-                # Mostramos el mensaje con el nombre del remitente
                 timestamp = datetime.now().strftime("%H:%M")
                 pv['write'](f"[{remitente}] ({timestamp}): {msg}")
 
-            elif tipo == 'E': # ECO de nuestro propio mensaje
+            elif tipo == 'E': 
                 destinatario = cliente.recv(64).decode('utf-8').strip()
                 ln = int.from_bytes(cliente.recv(4), 'big')
                 msg = cliente.recv(ln).decode('utf-8') if ln > 0 else ""
-                
-                # Abrimos la ventana con el destinatario (con quien hablamos)
                 pv = get_private_window(destinatario)
-                # Mostramos el mensaje con NUESTRO propio nombre (apodo)
                 timestamp = datetime.now().strftime("%H:%M")
-                pv['write'](f"[{apodo}] ({timestamp}): {msg}")
+                # --- MODIFICACIÓN AQUÍ para añadir "(tú)" en el chat privado ---
+                pv['write'](f"[{apodo} (tú)] ({timestamp}): {msg}")
             
             elif tipo == 'F':
                 nombre_archivo = cliente.recv(256).decode('utf-8').strip()
@@ -245,7 +246,7 @@ def escuchar_servidor():
                 escribir_en_chat(f"[Archivo '{nombre_archivo}' guardado en 'descargas']")
 
         except Exception as e:
-            print(e) # Para depuración
+            print(e)
             escribir_en_chat("[ERROR: Se ha perdido la conexión con el servidor.]")
             break
 
@@ -264,11 +265,13 @@ def iniciar_privado(event=None):
         messagebox.showinfo("Chat Privado", "Por favor, selecciona un usuario de la lista para chatear.", parent=root)
         return
     
-    destinatario = usuarios_listbox.get(seleccion[0])
+    destinatario_display = usuarios_listbox.get(seleccion[0])
+    # Limpiamos el "(tú)" si existe, para obtener el nombre real
+    destinatario = destinatario_display.replace(" (tú)", "")
     
     if destinatario == apodo:
         messagebox.showwarning("Acción no permitida", "No puedes iniciar un chat privado contigo mismo.", parent=root)
-        return # Detiene la ejecución de la función aquí
+        return
     
     get_private_window(destinatario)
 
@@ -300,10 +303,11 @@ def on_closing():
 chat_area.tag_configure("info", foreground=COLOR_TEXTO_SECUNDARIO, justify='center', font=FONT_ITALIC_PEQUEÑA)
 chat_area.tag_configure("nombre_otro_linea", font=FONT_BOLD, foreground=COLOR_PRIMARIO, justify='left')
 chat_area.tag_configure("nombre_mio_linea", font=FONT_BOLD, foreground=COLOR_TEXTO_SECUNDARIO, justify='right')
+# --- NUEVO TAG AÑADIDO ---
+chat_area.tag_configure("tag_tu", font=FONT_TU, foreground=COLOR_PRIMARIO, justify='right')
 
 chat_area.tag_configure("otro_usuario_burbuja", background=COLOR_BARRA_LATERAL, foreground=COLOR_TEXTO, justify='left', lmargin1=15, lmargin2=15, rmargin=120, spacing3=5, relief="groove", borderwidth=2, wrap="word")
 chat_area.tag_configure("mi_burbuja", background=COLOR_MI_BURBUJA, foreground=COLOR_TEXTO_MI_MENSAJE, justify='right', lmargin1=120, lmargin2=120, rmargin=15, spacing3=5, relief="groove", borderwidth=2, wrap="word")
-
 
 def crear_boton_con_icono(parent, texto_icono, comando):
     btn = tk.Button(
