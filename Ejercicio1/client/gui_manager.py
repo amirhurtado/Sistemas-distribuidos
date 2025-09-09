@@ -115,32 +115,40 @@ def _configurar_estilos_chat():
 def escribir_en_chat(mensaje_completo, tipo_mensaje="info"):
     """
     Añade un mensaje al área de chat principal con el formato adecuado.
-    :param mensaje_completo: El texto completo del mensaje.
-    :param tipo_mensaje: "yo", "otro" o "info" para aplicar el estilo correcto.
+    (VERSIÓN CORREGIDA para manejar mensajes de sistema de forma segura)
     """
     chat_area = app_state.gui_widgets['chat_area']
     chat_area.config(state="normal")
     
-    remitente = ""
-    mensaje = mensaje_completo
-    
-    if mensaje_completo.startswith("[") and "]" in mensaje_completo:
-        partes = mensaje_completo.split("] ", 1)
-        remitente = partes[0][1:]
-        mensaje = partes[1]
-
     timestamp = datetime.now().strftime("%H:%M")
     
-    if tipo_mensaje == "yo":
-        chat_area.insert(tk.END, f"{remitente} ", "nombre_mio_linea")
-        chat_area.insert(tk.END, "(tú) ", "tag_tu")
-        chat_area.insert(tk.END, f"({timestamp})\n", "nombre_mio_linea")
-        chat_area.insert(tk.END, f"{mensaje}\n\n", "mi_burbuja")
-    elif tipo_mensaje == "otro":
-        chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_otro_linea")
-        chat_area.insert(tk.END, f"{mensaje}\n\n", "otro_usuario_burbuja")
-    else: 
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Ahora, solo intentamos parsear el mensaje si es de un usuario.
+    # Los mensajes de tipo "info" se tratan de forma separada y segura.
+    if tipo_mensaje == "yo" or tipo_mensaje == "otro":
+        # Esta lógica de parseo solo se aplica a mensajes de usuario reales.
+        if "] " in mensaje_completo:
+            partes = mensaje_completo.split("] ", 1)
+            remitente = partes[0][1:]
+            mensaje = partes[1]
+
+            if tipo_mensaje == "yo":
+                chat_area.insert(tk.END, f"{remitente} ", "nombre_mio_linea")
+                chat_area.insert(tk.END, "(tú) ", "tag_tu")
+                chat_area.insert(tk.END, f"({timestamp})\n", "nombre_mio_linea")
+                chat_area.insert(tk.END, f"{mensaje}\n\n", "mi_burbuja")
+            else:  # tipo_mensaje == "otro"
+                chat_area.insert(tk.END, f"{remitente} ({timestamp})\n", "nombre_otro_linea")
+                chat_area.insert(tk.END, f"{mensaje}\n\n", "otro_usuario_burbuja")
+        else:
+            # Si un mensaje de usuario llega con mal formato, lo mostramos como info.
+            chat_area.insert(tk.END, f"{mensaje_completo}\n", "info")
+
+    else:  # tipo_mensaje == "info"
+        # Los mensajes del sistema como "[Enviando archivo...]" y los errores
+        # entrarán directamente aquí, evitando el error de parseo.
         chat_area.insert(tk.END, f"{mensaje_completo}\n", "info")
+    # --- FIN DE LA CORRECCIÓN ---
         
     chat_area.config(state="disabled")
     chat_area.yview(tk.END)
