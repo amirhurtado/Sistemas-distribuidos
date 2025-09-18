@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Chat WebSocket — Cliente</title>
+    <style>
+      :root {
+        --bg: #0f1724;
+        --card: #0b1220;
+        --accent: #7c3aed;
+        --muted: #94a3b8;
+        --me: #0ea5a4;
+        --other: #475569;
+        --bubble-radius: 14px;
+        --max-width: 720px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          Inter,
+          Segoe UI,
+          Roboto,
+          Arial,
+          Helvetica,
+          sans-serif;
+        background: linear-gradient(180deg, #071021 0%, #071827 100%);
+        color: #e6eef8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .app {
+        width: 100%;
+        max-width: var(--max-width);
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.02),
+          rgba(255, 255, 255, 0.01)
+        );
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 30px rgba(2, 6, 23, 0.7);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        color: var(--bg);
+        background: var(--accent);
+        padding: 6px 10px;
+        border-radius: 8px;
+      }
+      .meta {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .main {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 0;
+      }
+      @media (max-width: 860px) {
+        .main {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* chat area */
+      .chat {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        height: 62vh;
+        min-height: 360px;
+      }
+      .log {
+        flex: 1;
+        overflow: auto;
+        padding-right: 8px;
+      }
+      .log-inner {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .bubble {
+        max-width: 78%;
+        padding: 10px 12px;
+        border-radius: var(--bubble-radius);
+        line-height: 1.2;
+        font-size: 14px;
+        word-break: break-word;
+      }
+      .me {
+        align-self: flex-end;
+        background: linear-gradient(90deg, var(--me), #06b6d4);
+        color: #072b2b;
+        border-bottom-right-radius: 6px;
+      }
+      .other {
+        align-self: flex-start;
+        background: linear-gradient(90deg, #183046, var(--other));
+        border-bottom-left-radius: 6px;
+        color: #e6eef8;
+      }
+      .meta-line {
+        display: flex;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      .meta-sender {
+        font-weight: 600;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        border-top: 1px solid rgba(255, 255, 255, 0.02);
+        align-items: center;
+      }
+      .input {
+        flex: 1;
+        display: flex;
+        gap: 8px;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        background: transparent;
+        color: inherit;
+        font-size: 14px;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 0;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      /* sidebar */
+      .side {
+        border-left: 1px solid rgba(255, 255, 255, 0.02);
+        padding: 14px;
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.01),
+          transparent
+        );
+      }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+      }
+      .dot.online {
+        background: linear-gradient(90deg, #34d399, #10b981);
+      }
+      .dot.off {
+        background: #334155;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .small {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      /* nice monospace for logs if asked */
+      pre.debug {
+        background: rgba(255, 255, 255, 0.02);
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        overflow: auto;
+      }
+
+      /* message timestamp style */
+      .ts {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.45);
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" role="application">
+      <header>
+        <div>
+          <h1>WebSocket — Chat (Híbrido)</h1>
+          <div class="meta">
+            Interfaz mejorada · responsive · reconexión automática
+          </div>
+        </div>
+        <div class="meta">
+          IP servidor: <span id="server-ip">(detected)</span>
+        </div>
+      </header>
+
+      <div class="main">
+        <section class="chat">
+          <div class="log" id="log" aria-live="polite">
+            <div class="log-inner" id="logInner"></div>
+          </div>
+
+          <div class="controls">
+            <div class="input">
+              <input
+                id="name"
+                type="text"
+                placeholder="Tu nombre (ej: Juan)"
+                value="Usuario"
+              />
+              <input id="msg" type="text" placeholder="Escribe un mensaje..." />
+            </div>
+            <button id="sendBtn">Enviar</button>
+            <button id="clearBtn" class="secondary">Limpiar</button>
+          </div>
+        </section>
+
+        <aside class="side">
+          <div class="status">
+            <div id="dot" class="dot off" aria-hidden="true"></div>
+            <div>
+              <div id="statusText" class="small">Desconectado</div>
+              <div class="small">Ruta WS: <code id="wsPath">/ws</code></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="small">Último evento</div>
+            <div id="lastEvent" class="small">-</div>
+          </div>
+
+          <div class="row">
+            <div class="small">Reintentos</div>
+            <div id="tries" class="small">0</div>
+          </div>
+
+          <div style="margin-top: 12px">
+            <div class="small">Tips:</div>
+            <ul
+              class="small"
+              style="padding-left: 18px; margin-top: 8px; color: var(--muted)"
+            >
+              <li>
+                Si sirves desde HTTP, abre la misma dirección del navegador.
+              </li>
+              <li>
+                Si abres el HTML localmente, edita <code>server</code> en el
+                script abajo.
+              </li>
+              <li>Para LAN, usa la IP del servidor (ej: 10.253.34.81:8000).</li>
+            </ul>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      // Utils
+      function escapeHtml(str) {
+        return str.replace(
+          /[&<>\"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      }
+      function ts() {
+        return new Date().toLocaleTimeString();
+      }
+
+      // Configuration: by default use same host/port from where page is served
+      const defaultWS =
+        (location.protocol === "https:" ? "wss://" : "ws://") +
+        location.host +
+        "/ws";
+      // If you open file locally (file://), change this to your server address, e.g. 'ws://10.253.34.81:8000/ws'
+      let WS_URL = defaultWS;
+      if (location.protocol === "file:") {
+        // Helpful default hint: set the server IP here (edit manual)
+        WS_URL = "ws://10.253.34.81:8000/ws";
+      }
+      document.getElementById("server-ip").innerText =
+        location.protocol === "file:"
+          ? "LOCAL FILE — editar WS_URL"
+          : location.host;
+      document.getElementById("wsPath").innerText = new URL(WS_URL).pathname;
+
+      // DOM refs
+      const logInner = document.getElementById("logInner");
+      const dot = document.getElementById("dot");
+      const statusText = document.getElementById("statusText");
+      const lastEvent = document.getElementById("lastEvent");
+      const triesLabel = document.getElementById("tries");
+
+      // connection state
+      let ws;
+      let tries = 0;
+      let manualClose = false;
+
+      function addMessage(text, who = "other") {
+        const wrapper = document.createElement("div");
+        const metaLine = document.createElement("div");
+        metaLine.className = "meta-line";
+        const sender = document.createElement("div");
+        sender.className = "meta-sender";
+        sender.textContent = who === "me" ? "Yo" : who;
+        const metaTs = document.createElement("div");
+        metaTs.style.marginLeft = "8px";
+        metaTs.className = "small";
+        metaTs.textContent = ts();
+        metaLine.appendChild(sender);
+        metaLine.appendChild(metaTs);
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble " + (who === "me" ? "me" : "other");
+        bubble.innerHTML =
+          escapeHtml(text) + '<div class="ts">' + ts() + "</div>";
+
+        wrapper.appendChild(metaLine);
+        wrapper.appendChild(bubble);
+        logInner.appendChild(wrapper);
+        // autoscroll
+        const log = document.getElementById("log");
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function setStatus(online) {
+        if (online) {
+          dot.classList.remove("off");
+          dot.classList.add("online");
+          statusText.textContent = "Conectado";
+        } else {
+          dot.classList.remove("online");
+          dot.classList.add("off");
+          statusText.textContent = "Desconectado";
+        }
+      }
+
+      // connect with exponential backoff
+      function connect() {
+        manualClose = false;
+        lastEvent.textContent = "Intentando conectar";
+        ws = new WebSocket(WS_URL);
+        ws.addEventListener("open", () => {
+          tries = 0;
+          triesLabel.textContent = tries;
+          lastEvent.textContent = "Conexión abierta";
+          setStatus(true);
+          addMessage("WebSocket abierto", "Sistema");
+        });
+        ws.addEventListener("message", (e) => {
+          lastEvent.textContent = "Mensaje recibido";
+          // we expect the server to send plain text
+          addMessage(e.data, "Servidor");
+        });
+        ws.addEventListener("close", (ev) => {
+          setStatus(false);
+          lastEvent.textContent =
+            "Cerrada: " + (ev.code || "") + " " + (ev.reason || "");
+          addMessage("WebSocket cerrado", "Sistema");
+          if (!manualClose) retryConnect();
+        });
+        ws.addEventListener("error", (err) => {
+          lastEvent.textContent = "Error de conexión";
+          addMessage("Error de conexión (ver consola)", "Sistema");
+          console.error("WS error", err);
+        });
+      }
+
+      function retryConnect() {
+        tries++;
+        triesLabel.textContent = tries;
+        const delay = Math.min(10000, 500 * Math.pow(2, tries));
+        lastEvent.textContent =
+          "Reintentando en " + Math.round(delay / 1000) + "s";
+        setTimeout(() => {
+          lastEvent.textContent = "reintentando...";
+          connect();
+        }, delay);
+      }
+
+      // wire UI
+      document.getElementById("sendBtn").addEventListener("click", () => {
+        const name = document.getElementById("name").value || "Usuario";
+        const msg = document.getElementById("msg").value.trim();
+        if (!msg || !ws || ws.readyState !== WebSocket.OPEN) return;
+        const payload = name + ": " + msg;
+        ws.send(payload);
+        addMessage(msg, "me");
+        document.getElementById("msg").value = "";
+      });
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        logInner.innerHTML = "";
+        addMessage("Chat limpiado", "Sistema");
+      });
+
+      // allow enter key to send
+      document.getElementById("msg").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          document.getElementById("sendBtn").click();
+        }
+      });
+
+      // start
+      connect();
+    </script>
+  </body>
+</html>

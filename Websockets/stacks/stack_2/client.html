@@ -1,0 +1,35 @@
+
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Cliente WebSocket local</title></head>
+<body>
+  <h3>Cliente local que conecta a WebSocket remoto</h3>
+  <label>Server IP: <input id="ip" value="127.0.0.1"></label>
+  <label>Port: <input id="port" value="8765"></label>
+  <button onclick="conectar()">Conectar</button>
+  <div>
+    <input id="msg" placeholder="mensaje"/><button onclick="sendMsg()">Enviar</button>
+  </div>
+  <pre id="log"></pre>
+  <script>
+    let ws;
+    function conectar(){
+      const ip = document.getElementById('ip').value;
+      const port = document.getElementById('port').value;
+      const url = 'ws://' + ip + ':' + port + '/';
+      log('Intentando conectar a ' + url);
+      ws = new WebSocket(url);
+      ws.onopen = () => log('Conectado');
+      ws.onmessage = (e) => log('Servidor: ' + e.data);
+      ws.onclose = () => log('Cerrado');
+      ws.onerror = (e) => log('Error: ' + e);
+    }
+    function sendMsg(){
+      const v = document.getElementById('msg').value;
+      if(!ws || ws.readyState !== WebSocket.OPEN){ log('No conectado'); return; }
+      ws.send(v);
+      log('Yo: ' + v);
+    }
+    function log(t){ document.getElementById('log').innerText += t + '\\n'; }
+  </script>
+</body>
+</html>
