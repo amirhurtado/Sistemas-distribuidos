@@ -1,35 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cliente WebSocket Puro</title>
+    <style>
+      :root {
+        --bg-dark: #1c1917;
+        --bg-light: #292524;
+        --accent: #16a34a;
+        --accent-hover: #15803d;
+        --text-light: #f5f5f4;
+        --text-muted: #a8a29e;
+        --me-bg: #4f46e5;
+        --me-text: #e0e7ff;
+        --other-bg: #57534e;
+        --border-color: rgba(255, 255, 255, 0.1);
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: var(--bg-dark);
+        color: var(--text-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 1rem;
+      }
+      .container {
+        width: 100%;
+        max-width: 700px;
+        background: var(--bg-light);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+      }
+      .connection-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: flex-end; /* Alinear verticalmente */
+        padding-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .connection-panel > div {
+        flex: 1;
+        min-width: 150px;
+      }
+      label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.6rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-dark);
+        color: inherit;
+        font-size: 0.9rem;
+      }
+      pre#log {
+        height: 40vh;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 8px;
+        padding: 1rem;
+        overflow-y: auto;
+        white-space: pre-wrap; /* Para que el texto se ajuste */
+        word-wrap: break-word;
+        font-size: 0.9rem;
+        color: var(--text-light);
 
-<!doctype html>
-<html><head><meta charset="utf-8"><title>Cliente WebSocket local</title></head>
-<body>
-  <h3>Cliente local que conecta a WebSocket remoto</h3>
-  <label>Server IP: <input id="ip" value="127.0.0.1"></label>
-  <label>Port: <input id="port" value="8765"></label>
-  <button onclick="conectar()">Conectar</button>
-  <div>
-    <input id="msg" placeholder="mensaje"/><button onclick="sendMsg()">Enviar</button>
-  </div>
-  <pre id="log"></pre>
-  <script>
-    let ws;
-    function conectar(){
-      const ip = document.getElementById('ip').value;
-      const port = document.getElementById('port').value;
-      const url = 'ws://' + ip + ':' + port + '/';
-      log('Intentando conectar a ' + url);
-      ws = new WebSocket(url);
-      ws.onopen = () => log('Conectado');
-      ws.onmessage = (e) => log('Servidor: ' + e.data);
-      ws.onclose = () => log('Cerrado');
-      ws.onerror = (e) => log('Error: ' + e);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .controls {
+        display: flex;
+        gap: 0.75rem;
+      }
+      .controls input {
+        flex-grow: 1;
+        padding: 0.75rem;
+        border-radius: 8px;
+        font-size: 1rem;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        border: 0;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+      button:hover {
+        background: var(--accent-hover);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <section class="connection-panel">
+        <div>
+          <label for="ip">Server IP:</label>
+          <input id="ip" value="127.0.0.1" />
+        </div>
+        <div>
+          <label for="port">Port:</label>
+          <input id="port" value="8765" />
+        </div>
+        <div>
+          <button onclick="conectar()">Conectar</button>
+        </div>
+      </section>
+
+      <pre id="log"></pre>
+
+      <div class="controls">
+        <input id="msg" placeholder="Escribe un mensaje..." />
+        <button onclick="sendMsg()">Enviar</button>
+      </div>
+    </main>
+
+    <script>
+      let ws;
+
+      function conectar() {
+        const ip = document.getElementById("ip").value;
+        const port = document.getElementById("port").value;
+        // Corregido para que apunte a /ws si usas el servidor híbrido
+        // o déjalo en '/' si usas el servidor puro.
+        const url = "ws://" + ip + ":" + port + "/";
+        log("Intentando conectar a " + url);
+        ws = new WebSocket(url);
+        ws.onopen = () => log("Conectado");
+        ws.onmessage = (e) => log("Servidor: " + e.data);
+        ws.onclose = () => log("Cerrado");
+        ws.onerror = (e) =>
+          log("Error de conexión. Revisa IP, puerto y firewall.");
+      }
+
+      function sendMsg() {
+        const v = document.getElementById("msg").value;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          log("No conectado");
+          return;
+        }
+        ws.send(v);
+        log("Yo: " + v);
+        document.getElementById("msg").value = ""; // Limpiar input
+      }
+
+      function log(t){ 
+    const logEl = document.getElementById('log');
+
+    // Creamos un elemento div para cada línea del log
+    const entry = document.createElement('div');
+    entry.textContent = t; // Le ponemos el texto
+    logEl.appendChild(entry); // Lo añadimos al log
+
+    logEl.scrollTop = logEl.scrollHeight; // Mantenemos el auto-scroll
+}
+
+
+  document.getElementById('msg').addEventListener('keydown', function(event) {
+    // Si la tecla presionada es "Enter"
+    if (event.key === 'Enter') {
+        event.preventDefault(); // Evita que se añada una nueva línea en el input
+        sendMsg(); // Llama a la función que ya tenías para enviar
     }
-    function sendMsg(){
-      const v = document.getElementById('msg').value;
-      if(!ws || ws.readyState !== WebSocket.OPEN){ log('No conectado'); return; }
-      ws.send(v);
-      log('Yo: ' + v);
-    }
-    function log(t){ document.getElementById('log').innerText += t + '\\n'; }
-  </script>
-</body>
+});
+    </script>
+  </body>
 </html>
