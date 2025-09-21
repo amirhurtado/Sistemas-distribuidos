@@ -1,3 +1,4 @@
+# SE EJECUTA EN LA TERMINAL : "uvicorn app:app --host 0.0.0.0 --port 8000" (SERVER) y ir a http://localhost:8000/ (CLIENT)
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 import uvicorn
