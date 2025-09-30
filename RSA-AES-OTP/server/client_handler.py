@@ -167,12 +167,12 @@ class ClientHandler(threading.Thread):
             # Ahora que tenemos el texto plano, se lo pasamos al servidor para que lo reenvíe
             if msg_type == "public_message":
                 self.server.broadcast_message(self.nickname, content, source_client=self)
-                self.server.logger(f"[{self.nickname}] Mensaje público: {content}")
+                self.server.logger(f"[{self.nickname}] Mensaje público: {content} (CIFRADO: {encrypted_content})")
             
             elif msg_type == "private_message":
                 recipient = payload.get("recipient")
                 self.server.send_private_message(recipient, self.nickname, content)
-                self.server.logger(f"[{self.nickname} -> {recipient}] Mensaje privado: {content}")
+                self.server.logger(f"[{self.nickname} -> {recipient}] Mensaje privado: {content} (CIFRADO: {encrypted_content})")
         
         
         elif msg_type == "file_transfer":
