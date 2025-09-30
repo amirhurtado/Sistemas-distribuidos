@@ -79,17 +79,30 @@ class ClientHandler(threading.Thread):
             self.server.logger(f"'{self.addr}' se identificó como '{self.nickname}'.")
             self.server.broadcast_user_list()
 
-        elif msg_type == "public_message":
-            content = payload.get("content")
-            msg = protocol.create_message("public_message", sender=self.nickname, content=content)
-            self.server.broadcast(msg, source_client=self)
-            self.server.logger(f"[{self.nickname}] Mensaje público: {content}")
-
-        elif msg_type == "private_message":
-            recipient = payload.get("recipient")
-            content = payload.get("content")
-            self.server.send_private_message(recipient, self.nickname, content)
-            self.server.logger(f"[{self.nickname} -> {recipient}] Mensaje privado.")
+        elif msg_type in ["public_message", "private_message"]:
+            # MODIFICADO: Desciframos el mensaje del cliente
+            encrypted_content = payload.get("content")
+            try:
+                nonce = base64.b64decode(encrypted_content['nonce'])
+                tag = base64.b64decode(encrypted_content['tag'])
+                ciphertext = base64.b64decode(encrypted_content['ciphertext'])
+                
+                decrypted_bytes = security.decrypt_with_aes(self.session_key, nonce, tag, ciphertext)
+                content = decrypted_bytes.decode('utf-8')
+            except (ValueError, KeyError):
+                self.server.logger(f"Error al descifrar mensaje de {self.nickname}.")
+                return
+            
+            # Ahora que tenemos el texto plano, se lo pasamos al servidor para que lo reenvíe
+            if msg_type == "public_message":
+                self.server.broadcast_message(self.nickname, content, source_client=self)
+                self.server.logger(f"[{self.nickname}] Mensaje público: {content}")
+            
+            elif msg_type == "private_message":
+                recipient = payload.get("recipient")
+                self.server.send_private_message(recipient, self.nickname, content)
+                self.server.logger(f"[{self.nickname} -> {recipient}] Mensaje privado: {content}")
+        
         
         elif msg_type == "file_transfer":
             recipient = payload.get("recipient")

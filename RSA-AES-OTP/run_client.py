@@ -5,7 +5,7 @@ import base64
 from client.gui.manager import GuiManager
 from client.network.handler import NetworkHandler
 from client.persistence import LogManager
-
+from common import security 
 
 class ChatApplication:
     def __init__(self, root):
@@ -62,14 +62,31 @@ class ChatApplication:
             self.nickname = ""
 
     def send_message(self, recipient, content):
-        if recipient == "public":
-            self.network.send("public_message", recipient="public", content=content)
-            msg = {"type": "message", "sender": self.nickname, "content": content}
-            self.conversations.setdefault("public", []).append(msg)
-            if self.gui.active_chat == "public":
-                self.gui.add_message_to_view(msg)
+        # MODIFICADO: Ahora ciframos el mensaje antes de enviarlo
+        if self.network.session_key:
+            content_bytes = content.encode('utf-8')
+            
+            # 1. Cifrar el contenido
+            nonce, tag, ciphertext = security.encrypt_with_aes(self.network.session_key, content_bytes)
+            
+            # 2. Empaquetar todo en un diccionario, codificado en Base64
+            encrypted_payload = {
+                'nonce': base64.b64encode(nonce).decode('ascii'),
+                'tag': base64.b64encode(tag).decode('ascii'),
+                'ciphertext': base64.b64encode(ciphertext).decode('ascii')
+            }
+            
+            if recipient == "public":
+                self.network.send("public_message", content=encrypted_payload)
+                # La lógica para mostrar tu propio mensaje no cambia
+                msg = {"type": "message", "sender": self.nickname, "content": content}
+                self.conversations.setdefault("public", []).append(msg)
+                if self.gui.active_chat == "public":
+                    self.gui.add_message_to_view(msg)
+            else:
+                self.network.send("private_message", recipient=recipient, content=encrypted_payload)
         else:
-            self.network.send("private_message", recipient=recipient, content=content)
+            messagebox.showerror("Error", "No se ha establecido una sesión segura.")
 
     def send_file(self, recipient, filepath):
         try:
@@ -117,32 +134,56 @@ class ChatApplication:
     def handle_server_message(self, msg_type, payload):
         self.root.after(0, self._process_message, msg_type, payload)
 
+
+
     def _process_message(self, msg_type, payload):
-        if msg_type == "public_message":
-            sender = payload.get("sender", "Anónimo")
-            content = payload.get("content", "")
-            msg = {"type": "message", "sender": sender, "content": content}
-            self.conversations.setdefault("public", []).append(msg)
-            if self.gui.active_chat == "public":
-                self.gui.add_message_to_view(msg)
+        # --- INICIO DE LA SECCIÓN MODIFICADA ---
+        # Si el mensaje es de texto, primero debemos descifrarlo.
+        if msg_type in ["public_message", "private_message", "private_message_echo"]:
+            # Determinar quién envía y quién recibe
+            sender = payload.get("sender", self.nickname if msg_type == "private_message_echo" else "Anónimo")
+            recipient = payload.get("recipient", "public")
+            
+            
+            encrypted_content = payload.get("content")
+            print(f"DEBUG: Mensaje CIFRADO recibido de {sender}: {encrypted_content}")
+            
+            content = "" # Variable para guardar el texto descifrado
+            
+            try:
+                # 1. Decodificar las partes del mensaje desde Base64
+                nonce = base64.b64decode(encrypted_content['nonce'])
+                tag = base64.b64decode(encrypted_content['tag'])
+                ciphertext = base64.b64decode(encrypted_content['ciphertext'])
+                
+                # 2. Intentar descifrar con la clave de sesión
+                decrypted_bytes = security.decrypt_with_aes(self.network.session_key, nonce, tag, ciphertext)
+                content = decrypted_bytes.decode('utf-8')
 
-        elif msg_type == "private_message":
-            sender = payload["sender"]
-            content = payload["content"]
+            except (ValueError, KeyError, TypeError):
+                # Si algo falla (mensaje manipulado, error de formato), mostramos un error.
+                content = "[Mensaje corrupto o ilegible]"
+            
+            # Ahora que tenemos el 'content' en texto plano, continuamos con la lógica original
             msg = {"type": "message", "sender": sender, "content": content}
-            self.start_private_chat(sender)
-            self.conversations.setdefault(sender, []).append(msg)
-            if self.gui.active_chat == sender:
-                self.gui.add_message_to_view(msg)
 
-        elif msg_type == "private_message_echo":
-            recipient = payload["recipient"]
-            content = payload["content"]
-            msg = {"type": "message", "sender": self.nickname, "content": content}
-            self.start_private_chat(recipient)
-            self.conversations.setdefault(recipient, []).append(msg)
-            if self.gui.active_chat == recipient:
-                self.gui.add_message_to_view(msg)
+            if msg_type == "public_message":
+                self.conversations.setdefault("public", []).append(msg)
+                if self.gui.active_chat == "public":
+                    self.gui.add_message_to_view(msg)
+            
+            elif msg_type == "private_message":
+                self.start_private_chat(sender)
+                self.conversations.setdefault(sender, []).append(msg)
+                if self.gui.active_chat == sender:
+                    self.gui.add_message_to_view(msg)
+
+            elif msg_type == "private_message_echo":
+                self.start_private_chat(recipient)
+                self.conversations.setdefault(recipient, []).append(msg)
+                if self.gui.active_chat == recipient:
+                    self.gui.add_message_to_view(msg)
+
 
         elif msg_type == "file_transfer":
             sender = payload["sender"]

@@ -66,3 +66,38 @@ def decrypt_with_rsa(rsa_private_key, encrypted_data):
 def generate_session_key():
     """Genera una clave aleatoria de 256 bits (32 bytes) para usar con AES."""
     return get_random_bytes(32)
+
+
+
+
+
+#AES
+
+def encrypt_with_aes(session_key, data_bytes):
+    """
+    Cifra datos usando la clave de sesión AES en modo GCM.
+    Devuelve nonce, tag y ciphertext, necesarios para descifrar.
+    """
+    # Creamos un nuevo objeto de cifrado AES con la clave de sesión
+    cipher = AES.new(session_key, AES.MODE_GCM)
+    
+    # Ciframos los datos. El modo GCM también genera una "etiqueta" de autenticación.
+    ciphertext, tag = cipher.encrypt_and_digest(data_bytes)
+    
+    # El "nonce" es un número único que usa el cifrador, también debemos guardarlo.
+    nonce = cipher.nonce
+    
+    return nonce, tag, ciphertext
+
+def decrypt_with_aes(session_key, nonce, tag, ciphertext):
+    """
+    Descifra datos usando la clave de sesión, el nonce y el tag.
+    Si el tag no coincide (mensaje corrupto/clave incorrecta), lanzará un error.
+    """
+    # Creamos el objeto de cifrado con la misma clave y el mismo nonce que se usó para cifrar
+    cipher = AES.new(session_key, AES.MODE_GCM, nonce=nonce)
+    
+    # Desciframos y verificamos. Si el tag no es correcto, esta línea fallará.
+    decrypted_bytes = cipher.decrypt_and_verify(ciphertext, tag)
+    
+    return decrypted_bytes
