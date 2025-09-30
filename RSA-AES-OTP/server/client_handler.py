@@ -5,67 +5,61 @@ import base64
 
 class ClientHandler(threading.Thread):
     # MODIFICADO: El constructor ahora recibe las claves del servidor
-    def __init__(self, connection, address, server, rsa_private, rsa_public_pem):
+    def __init__(self, connection, address, server, rsa_public_pem):
         super().__init__(daemon=True)
         self.conn = connection
         self.addr = address
         self.server = server
         self.nickname = f"user_{address[1]}"
-        # NUEVO: Atributos para la seguridad
-        self.server_rsa_private_key = rsa_private
+        
+        # Atributos de seguridad
         self.server_rsa_public_pem = rsa_public_pem
-        self.session_key = None # Aquí guardaremos la clave AES del cliente
+        self.client_rsa_public_pem = None # Para guardar la clave del cliente
+        self.session_key = None 
+
 
     def run(self):
-        self.server.logger(f"[NUEVA CONEXIÓN] {self.addr} conectado.")
+        self.server.logger(f"[NUEVA CONEXIÓN] {self.addr} iniciando Fase 1.")
         try:
-            # Realizar el handshake de seguridad
-            if not self.perform_handshake():
-                self.server.logger(f"[ERROR HANDSHAKE] Falló el intercambio de claves con {self.addr}.")
-                # Si el handshake falla, la conexión se cerrará en el bloque 'finally'
+            # Fase 1: Intercambio de claves RSA
+            if not self.perform_rsa_exchange():
+                self.server.logger(f"[ERROR FASE 1] Falló el intercambio de claves con {self.addr}.")
                 return
 
-            # MODIFICADO: El bucle para escuchar mensajes ahora va aquí,
-            # DESPUÉS de un handshake exitoso.
-            while True:
-                message = protocol.parse_message_from_socket(self.conn)
-                if message is None:
-                    break  # El cliente cerró la conexión
-                self.handle_message(message)
-                
+            # Por ahora, dejamos el hilo aquí. Las Fases 2 y 3 irán a continuación.
+            self.server.logger(f"[FASE 1 COMPLETADA] Intercambio de claves con {self.addr} exitoso.")
+            
+            # --- Aquí iría la lógica para las Fases 2, 3 y 4 ---
+            # --- Por ahora, lo dejamos pendiente ---
+
         except (ConnectionResetError, ConnectionAbortedError):
             self.server.logger(f"[CONEXIÓN PERDIDA] {self.nickname} se desconectó.")
         finally:
             self.cleanup()
 
     
-    # NUEVO: Método para gestionar el intercambio de claves RSA
-    def perform_handshake(self):
+    def perform_rsa_exchange(self):
         try:
-            # 1. Enviar la clave pública del servidor al cliente
-            self.server.logger(f"Enviando clave pública RSA a {self.addr}...")
-            key_exchange_msg = protocol.create_message(
-                "key_exchange_init", 
+            # 1. El Servidor espera recibir la clave pública del Cliente.
+            self.server.logger(f"Esperando clave pública de {self.addr}...")
+            client_msg = protocol.parse_message_from_socket(self.conn)
+            if not client_msg or client_msg.get("type") != "client_public_key":
+                self.server.logger("Mensaje de cliente no válido.")
+                return False
+            
+            self.client_rsa_public_pem = client_msg["payload"]["public_key"].encode('ascii')
+            self.server.logger(f"Clave pública de {self.addr} recibida.")
+
+            # 2. El Servidor responde con su propia clave pública.
+            self.server.logger(f"Enviando clave pública del servidor a {self.addr}...")
+            server_key_msg = protocol.create_message(
+                "server_public_key", 
                 public_key=self.server_rsa_public_pem.decode('ascii')
             )
-            self.send(key_exchange_msg)
-
-            # 2. Esperar la respuesta del cliente con la clave de sesión cifrada
-            response = protocol.parse_message_from_socket(self.conn)
-            if not response or response.get("type") != "key_exchange_finish":
-                return False
-
-            # MODIFICADO: Decodificar el string Base64 para obtener los bytes cifrados originales
-            encrypted_key_b64 = response["payload"]["session_key"]
-            encrypted_key_bytes = base64.b64decode(encrypted_key_b64)
-            
-            # 3. Descifrar la clave de sesión usando la clave privada del servidor
-            self.session_key = security.decrypt_with_rsa(self.server_rsa_private_key, encrypted_key_bytes)
-            
-            self.server.logger(f"Handshake con {self.addr} completado. Clave de sesión recibida.")
+            self.send(server_key_msg)
             return True
         except Exception as e:
-            self.server.logger(f"Error durante el handshake con {self.addr}: {e}")
+            self.server.logger(f"Error durante el intercambio de claves RSA con {self.addr}: {e}")
             return False
         
         

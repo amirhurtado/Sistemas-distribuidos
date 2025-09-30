@@ -29,7 +29,8 @@ class ChatServer:
         self.logger(f"Servidor escuchando en {self.host}:{self.port}...")
         while True:
             conn, addr = self.server_socket.accept()
-            client_handler = ClientHandler(conn, addr, self, self.rsa_private_key, self.rsa_public_pem)
+            # MODIFICADO: Ya no pasamos la clave privada, solo la pública.
+            client_handler = ClientHandler(conn, addr, self, self.rsa_public_pem)
             self.add_client(client_handler)
             client_handler.start()
 
