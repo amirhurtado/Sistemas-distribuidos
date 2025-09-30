@@ -171,8 +171,16 @@ class ChatApplication:
             self.gui.update_user_list(payload["users"])
 
     def handle_disconnect(self, reason):
-        self.root.after(0, self.gui.add_system_message, f"[DESCONECTADO] {reason}")
-        self.root.after(0, messagebox.showwarning, "Desconectado", reason)
+        # MODIFICADO: Envolvemos las llamadas a la GUI en un try-except
+        try:
+            # Esto funcionará si la desconexión ocurre después de que la GUI esté corriendo
+            self.root.after(0, self.gui._add_system_message, f"[DESCONECTADO] {reason}")
+            self.root.after(0, messagebox.showwarning, "Desconectado", reason)
+        except RuntimeError:
+            # Esto se ejecutará si la desconexión ocurre ANTES de que inicie el mainloop
+            print(f"!!! Error de GUI manejado: La desconexión ocurrió antes de que la ventana principal estuviera activa.")
+            print(f"[DESCONECTADO] {reason}")
+
 
     def shutdown(self):
         if self.log_manager:

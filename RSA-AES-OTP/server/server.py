@@ -2,6 +2,7 @@ import socket
 import threading
 from .client_handler import ClientHandler
 from common import protocol
+from common import security  
 
 class ChatServer:
     def __init__(self, host, port, logger=print):
@@ -12,6 +13,12 @@ class ChatServer:
         self.nicknames = {}  # {nickname: client_handler_instance}
         self.lock = threading.Lock()
         self.logger = logger
+        
+        # NUEVO: Generar par de claves RSA para el servidor al iniciar
+        self.logger("Generando par de claves RSA para el servidor...")
+        self.rsa_private_key = security.generate_rsa_keys()
+        self.rsa_public_pem = security.get_public_key_pem(self.rsa_private_key)
+        self.logger("Claves RSA generadas correctamente.")
 
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -21,7 +28,7 @@ class ChatServer:
         self.logger(f"Servidor escuchando en {self.host}:{self.port}...")
         while True:
             conn, addr = self.server_socket.accept()
-            client_handler = ClientHandler(conn, addr, self)
+            client_handler = ClientHandler(conn, addr, self, self.rsa_private_key, self.rsa_public_pem)
             self.add_client(client_handler)
             client_handler.start()
 
