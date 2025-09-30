@@ -9,6 +9,8 @@ from client.persistence import LogManager
 from common import protocol
 from common import security
 
+import threading
+
 
 class ChatApplication:
     def __init__(self, root):
@@ -32,21 +34,78 @@ class ChatApplication:
         )
 
     def start(self):
+        # 1. Conectar y realizar intercambio RSA (Fase 1)
         if not self.network.connect("127.0.0.1", 5000):
             messagebox.showerror("Error", "No se pudo conectar al servidor.")
             self.shutdown()
             return
         
-        # Ocultamos la ventana hasta que todo el proceso termine
+        # Ocultamos la ventana principal hasta que todo termine
         self.root.withdraw()
         
-        # --- NUEVO: Inicia la Fase 2 de Autenticación OTP ---
+        # 2. Autenticar con OTP (Fase 2)
         if not self.perform_otp_authentication():
             messagebox.showerror("Error de Autenticación", "No se pudo verificar la identidad con el servidor.")
             self.shutdown()
             return
+        print("Fase 2 (Autenticación OTP) completada con éxito.")
+
+        # 3. Establecer la clave de sesión AES (Fase 3)
+        if not self.establish_aes_key():
+            messagebox.showerror("Error de Sesión", "No se pudo establecer un canal seguro.")
+            self.shutdown()
+            return
+        print("Fase 3 (Establecimiento AES) completada con éxito.")
+
+        # 4. Iniciar el chat y la escucha de mensajes (Fase 4)
+        self.login_and_start_chat()
+        
+        self.root.mainloop()
+
+
+    def establish_aes_key(self):
+        try:
+            print("Generando y enviando clave de sesión AES...")
+            # 1. El cliente genera la clave de sesión AES
+            session_key = security.generate_session_key()
+            self.network.session_key = session_key
+
+            # 2. La cifra con la CLAVE PÚBLICA DEL SERVIDOR
+            encrypted_aes_key = security.encrypt_with_rsa(self.network.server_rsa_public_pem, session_key)
             
-        print("¡Autenticación OTP exitosa! Listo para la Fase 3.")
+            # 3. La envía al servidor
+            aes_msg = protocol.create_message(
+                "aes_key_exchange",
+                key=base64.b64encode(encrypted_aes_key).decode('ascii')
+            )
+            self.network.socket.sendall(aes_msg)
+
+            # 4. Espera la confirmación final del servidor
+            final_msg = protocol.parse_message_from_socket(self.network.socket)
+            return final_msg and final_msg.get("type") == "secure_channel_ready"
+        except Exception as e:
+            print(f"Excepción durante el establecimiento de AES: {e}")
+            return False
+
+    # --- NUEVA FUNCIÓN PARA LA FASE 4 ---
+    def login_and_start_chat(self):
+        print("Canal seguro listo. Iniciando el chat.")
+        # 1. Ahora sí, iniciamos el hilo que escucha mensajes en segundo plano
+        self.network.is_listening = True
+        listen_thread = threading.Thread(target=self.network.listen, daemon=True)
+        listen_thread.start()
+
+        # 2. Pedimos el nickname al usuario
+        self.prompt_for_nickname()
+
+        # 3. Si tenemos nickname, mostramos la ventana del chat
+        if self.nickname:
+            self.log_manager = LogManager(self.nickname)
+            self.conversations["public"] = self.log_manager.load_conversation("public")
+            self.root.deiconify() # <-- Mostramos la ventana principal
+            self.switch_chat_view("public")
+        else:
+            self.shutdown()
 
     def perform_otp_authentication(self):
         try:
@@ -86,18 +145,15 @@ class ChatApplication:
             return False
 
     def prompt_for_nickname(self):
-        self.root.withdraw()
-        nickname = simpledialog.askstring(
-            "Bienvenido", "Elige tu nombre de usuario:", parent=self.root
-        )
+        nickname = simpledialog.askstring("Bienvenido", "Elige tu nombre de usuario:", parent=self.root)
         if nickname:
             self.nickname = nickname
             self.gui.nickname = nickname
             self.root.title(f"Sirius Chat - Conectado como {self.nickname}")
-            self.network.send("login", nickname=self.nickname)
-            self._add_system_message(
-                "public", f"¡Bienvenido, {self.nickname}! Conectado al servidor."
-            )
+            
+            # El mensaje de login ahora también debe ir cifrado
+            self.network.send("login", nickname=self.nickname) 
+            self._add_system_message("public", f"¡Bienvenido, {self.nickname}! Conectado al canal seguro.")
         else:
             self.nickname = ""
 

@@ -20,7 +20,6 @@ class ClientHandler(threading.Thread):
 
 
     def run(self):
-        self.server.logger(f"[NUEVA CONEXIÓN] {self.addr} iniciando Fase 1.")
         try:
             # Fase 1: Intercambio de claves RSA
             if not self.perform_rsa_exchange():
@@ -28,18 +27,49 @@ class ClientHandler(threading.Thread):
                 return
             self.server.logger(f"[FASE 1 COMPLETADA] Intercambio de claves con {self.addr} exitoso.")
 
-            # --- NUEVO: Inicia la Fase 2 de Autenticación OTP ---
+            # Fase 2: Autenticación OTP
             if not self.perform_otp_authentication():
                 self.server.logger(f"[ERROR FASE 2] Falló la autenticación OTP con {self.addr}.")
                 return
             self.server.logger(f"[FASE 2 COMPLETADA] Autenticación OTP con {self.addr} exitosa.")
+
+            # --- NUEVO: Fase 3, Esperar la clave AES ---
+            if not self.receive_aes_key():
+                self.server.logger(f"[ERROR FASE 3] Falló la recepción de la clave AES de {self.addr}.")
+                return
+            self.server.logger(f"[FASE 3 COMPLETADA] Clave AES de {self.addr} recibida y establecida.")
             
-            # --- Aquí irán las Fases 3 y 4 ---
+            # --- NUEVO: Fase 4, Iniciar el bucle de mensajes ---
+            self.server.logger(f"Canal seguro con {self.addr} establecido. Esperando mensajes...")
+            while True:
+                message = protocol.parse_message_from_socket(self.conn)
+                if message is None: break
+                self.handle_message(message)
 
         except (ConnectionResetError, ConnectionAbortedError):
             self.server.logger(f"[CONEXIÓN PERDIDA] {self.nickname} se desconectó.")
         finally:
             self.cleanup()
+
+    def receive_aes_key(self):
+        try:
+            # 1. Espera el mensaje con la clave AES
+            aes_msg = protocol.parse_message_from_socket(self.conn)
+            if not aes_msg or aes_msg.get("type") != "aes_key_exchange":
+                return False
+
+            # 2. Descifra la clave AES con la CLAVE PRIVADA DEL SERVIDOR
+            encrypted_key = base64.b64decode(aes_msg["payload"]["key"])
+            decrypted_key = security.decrypt_with_rsa(self.server.rsa_private_key, encrypted_key)
+            
+            # 3. La guarda y confirma al cliente
+            self.session_key = decrypted_key
+            ready_msg = protocol.create_message("secure_channel_ready")
+            self.send(ready_msg)
+            return True
+        except Exception as e:
+            self.server.logger(f"Excepción en la recepción de AES: {e}")
+            return False
 
     
     def perform_rsa_exchange(self):
