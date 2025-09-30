@@ -5,7 +5,10 @@ import base64
 from client.gui.manager import GuiManager
 from client.network.handler import NetworkHandler
 from client.persistence import LogManager
-from common import security 
+
+from common import protocol
+from common import security
+
 
 class ChatApplication:
     def __init__(self, root):
@@ -33,17 +36,54 @@ class ChatApplication:
             messagebox.showerror("Error", "No se pudo conectar al servidor.")
             self.shutdown()
             return
-
-        self.prompt_for_nickname()
-
-        if self.nickname:
-            self.log_manager = LogManager(self.nickname)
-            self.conversations["public"] = self.log_manager.load_conversation("public")
-            self.root.deiconify()
-            self.switch_chat_view("public")
-            self.root.mainloop()
-        else:
+        
+        # Ocultamos la ventana hasta que todo el proceso termine
+        self.root.withdraw()
+        
+        # --- NUEVO: Inicia la Fase 2 de Autenticación OTP ---
+        if not self.perform_otp_authentication():
+            messagebox.showerror("Error de Autenticación", "No se pudo verificar la identidad con el servidor.")
             self.shutdown()
+            return
+            
+        print("¡Autenticación OTP exitosa! Listo para la Fase 3.")
+
+    def perform_otp_authentication(self):
+        try:
+            # 1. Espera el reto del servidor
+            print("Esperando reto OTP del servidor...")
+            challenge_msg = protocol.parse_message_from_socket(self.network.socket)
+            if not challenge_msg or challenge_msg.get("type") != "otp_challenge":
+                return False
+
+            # 2. Descifra el reto con la CLAVE PRIVADA DEL CLIENTE
+            encrypted_challenge = base64.b64decode(challenge_msg["payload"]["challenge"])
+            decrypted_otp = security.decrypt_with_rsa(self.network.rsa_private_key, encrypted_challenge).decode('utf-8')
+
+            # 3. Muestra el código al usuario y le pide que lo re-ingrese
+            messagebox.showinfo("Reto de Seguridad (OTP)", f"El servidor te ha enviado un código: {decrypted_otp}\n\nIntrodúcelo a continuación para verificar tu identidad.")
+            user_response = simpledialog.askstring("Respuesta de Seguridad", "Escribe el código que acabas de ver:", parent=self.root)
+
+            if not user_response:
+                return False
+
+            # 4. Cifra la respuesta del usuario con la CLAVE PÚBLICA DEL SERVIDOR
+            encrypted_response = security.encrypt_with_rsa(self.network.server_rsa_public_pem, user_response.encode('utf-8'))
+            
+            # 5. Envía la respuesta cifrada al servidor
+            response_msg = protocol.create_message(
+                "otp_response",
+                response=base64.b64encode(encrypted_response).decode('ascii')
+            )
+            self.network.socket.sendall(response_msg)
+
+            # 6. Espera la confirmación final del servidor
+            final_msg = protocol.parse_message_from_socket(self.network.socket)
+            return final_msg and final_msg.get("type") == "auth_success"
+
+        except Exception as e:
+            print(f"Excepción durante la autenticación OTP: {e}")
+            return False
 
     def prompt_for_nickname(self):
         self.root.withdraw()

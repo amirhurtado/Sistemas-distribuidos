@@ -2,6 +2,7 @@ import threading
 from common import protocol
 from common import security  
 import base64 
+import random
 
 class ClientHandler(threading.Thread):
     # MODIFICADO: El constructor ahora recibe las claves del servidor
@@ -25,12 +26,15 @@ class ClientHandler(threading.Thread):
             if not self.perform_rsa_exchange():
                 self.server.logger(f"[ERROR FASE 1] Falló el intercambio de claves con {self.addr}.")
                 return
-
-            # Por ahora, dejamos el hilo aquí. Las Fases 2 y 3 irán a continuación.
             self.server.logger(f"[FASE 1 COMPLETADA] Intercambio de claves con {self.addr} exitoso.")
+
+            # --- NUEVO: Inicia la Fase 2 de Autenticación OTP ---
+            if not self.perform_otp_authentication():
+                self.server.logger(f"[ERROR FASE 2] Falló la autenticación OTP con {self.addr}.")
+                return
+            self.server.logger(f"[FASE 2 COMPLETADA] Autenticación OTP con {self.addr} exitosa.")
             
-            # --- Aquí iría la lógica para las Fases 2, 3 y 4 ---
-            # --- Por ahora, lo dejamos pendiente ---
+            # --- Aquí irán las Fases 3 y 4 ---
 
         except (ConnectionResetError, ConnectionAbortedError):
             self.server.logger(f"[CONEXIÓN PERDIDA] {self.nickname} se desconectó.")
@@ -60,6 +64,49 @@ class ClientHandler(threading.Thread):
             return True
         except Exception as e:
             self.server.logger(f"Error durante el intercambio de claves RSA con {self.addr}: {e}")
+            return False
+
+
+    def perform_otp_authentication(self):
+        try:
+            # 1. El Servidor genera un código OTP aleatorio (el reto)
+            otp_code = str(random.randint(100000, 999999))
+            self.server.logger(f"Generando reto OTP '{otp_code}' para {self.addr}.")
+
+            # 2. Cifra el reto con la CLAVE PÚBLICA DEL CLIENTE
+            encrypted_otp = security.encrypt_with_rsa(self.client_rsa_public_pem, otp_code.encode('utf-8'))
+            
+            # 3. Envía el reto cifrado al cliente
+            challenge_msg = protocol.create_message(
+                "otp_challenge",
+                challenge=base64.b64encode(encrypted_otp).decode('ascii')
+            )
+            self.send(challenge_msg)
+
+            # 4. Espera la respuesta del cliente
+            response_msg = protocol.parse_message_from_socket(self.conn)
+            if not response_msg or response_msg.get("type") != "otp_response":
+                return False
+
+            # 5. Descifra la respuesta con la CLAVE PRIVADA DEL SERVIDOR
+            encrypted_response = base64.b64decode(response_msg["payload"]["response"])
+            # Necesitamos la clave privada del servidor, que no pasamos antes. La obtenemos del objeto server.
+            decrypted_response = security.decrypt_with_rsa(self.server.rsa_private_key, encrypted_response).decode('utf-8')
+            
+            # 6. Compara el reto original con la respuesta descifrada
+            if decrypted_response == otp_code:
+                # ¡Éxito! Enviamos la confirmación.
+                success_msg = protocol.create_message("auth_success")
+                self.send(success_msg)
+                return True
+            else:
+                # ¡Fallo! Enviamos el rechazo.
+                fail_msg = protocol.create_message("auth_fail")
+                self.send(fail_msg)
+                return False
+
+        except Exception as e:
+            self.server.logger(f"Excepción en la autenticación OTP: {e}")
             return False
         
         
