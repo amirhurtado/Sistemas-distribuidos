@@ -49,7 +49,7 @@ export default function ImageUploader() {
     setProcessedImageUrl(null);
 
     // Genera un nombre de archivo único para evitar colisiones
-    const fileName = `${Date.now()}-${selectedFile.name}`;
+    const fileName = `public/${Date.now()}-${selectedFile.name}`;
 
     const { data, error } = await supabase.storage
       .from('images') // Nuestro bucket se llama 'images'
